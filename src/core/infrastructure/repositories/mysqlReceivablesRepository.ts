@@ -19,7 +19,7 @@ export class MysqlReceivablesRepository implements CustomerCreditRepository {
     return account;
   }
 
-  async addPayment(input: { cuentaId: number; monto: number; metodoPago: PaymentMethod }): Promise<ReceivableAccount> {
+  async addPayment(input: { cuentaId: number; monto: number; metodoPago: PaymentMethod; cajaTurnoId: number }): Promise<ReceivableAccount> {
     const connection = await getMysqlPool().getConnection();
     try {
       await connection.beginTransaction();
@@ -30,6 +30,11 @@ export class MysqlReceivablesRepository implements CustomerCreditRepository {
       const newBalance = Number(account.saldo) - input.monto;
       await connection.execute("INSERT INTO abonos_clientes (cuenta_por_cobrar_id, monto, metodo_pago) VALUES (?, ?, ?)", [input.cuentaId, input.monto, input.metodoPago]);
       await connection.execute("UPDATE cuentas_por_cobrar SET saldo = ?, estado = ? WHERE id = ?", [newBalance, newBalance === 0 ? "pagada" : "pendiente", input.cuentaId]);
+      
+      if (input.cajaTurnoId) {
+         await connection.execute("INSERT INTO movimientos_caja (caja_turno_id, tipo, metodo_pago, monto, concepto) VALUES (?, 'ingreso', ?, ?, ?)", [input.cajaTurnoId, input.metodoPago, input.monto, `Abono de cliente (Cuenta #${input.cuentaId})`]);
+      }
+      
       await connection.commit();
       const updated = await this.findById(input.cuentaId);
       if (!updated) throw new Error("No se pudo consultar la cuenta actualizada");

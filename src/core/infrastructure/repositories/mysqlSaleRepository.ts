@@ -27,18 +27,19 @@ export class MysqlSaleRepository implements SaleRepository {
         lines.push({ id: variant.id, quantity: line.cantidad, price: Number(variant.precio_venta), cost: Number(variant.costo), lineTotal });
       }
       let creditId: number | null = null;
-      if (input.metodoPago === "credito") {
+      const normalizedPayment = input.metodoPago.toLowerCase();
+      if (normalizedPayment === "credito") {
         if (!input.clienteCredito?.nombre?.trim()) throw new Error("El cliente es obligatorio para una venta a crédito");
         const [creditResult] = await connection.execute<ResultSetHeader>("INSERT INTO cuentas_por_cobrar (cliente_nombre, cliente_identificacion, referencia, monto_original, saldo, fecha_vencimiento) VALUES (?, ?, ?, ?, ?, ?)", [input.clienteCredito.nombre.trim(), input.clienteCredito.identificacion?.trim() || null, "Venta pendiente", subtotal, subtotal, input.clienteCredito.fechaVencimiento || null]);
         creditId = creditResult.insertId;
       }
-      const [saleResult] = await connection.execute<ResultSetHeader>("INSERT INTO ventas (caja_turno_id, metodo_pago, cuenta_por_cobrar_id, subtotal, total, costo_total) VALUES (?, ?, ?, ?, ?, ?)", [input.cajaTurnoId, input.metodoPago, creditId, subtotal, subtotal, costoTotal]);
+      const [saleResult] = await connection.execute<ResultSetHeader>("INSERT INTO ventas (caja_turno_id, metodo_pago, cuenta_por_cobrar_id, subtotal, total, costo_total) VALUES (?, ?, ?, ?, ?, ?)", [input.cajaTurnoId, normalizedPayment, creditId, subtotal, subtotal, costoTotal]);
       for (const line of lines) {
         await connection.execute("INSERT INTO venta_detalles (venta_id, variante_id, cantidad, precio_unitario, costo_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)", [saleResult.insertId, line.id, line.quantity, line.price, line.cost, line.lineTotal]);
         await connection.execute("UPDATE variantes_producto SET stock_actual = stock_actual - ? WHERE id = ?", [line.quantity, line.id]);
       }
-      if (input.metodoPago !== "credito") {
-        await connection.execute("INSERT INTO movimientos_caja (caja_turno_id, tipo, metodo_pago, monto, concepto) VALUES (?, 'venta', ?, ?, ?)", [input.cajaTurnoId, input.metodoPago, subtotal, `Venta #${saleResult.insertId}`]);
+      if (normalizedPayment !== "credito") {
+        await connection.execute("INSERT INTO movimientos_caja (caja_turno_id, tipo, metodo_pago, monto, concepto) VALUES (?, 'venta', ?, ?, ?)", [input.cajaTurnoId, normalizedPayment, subtotal, `Venta #${saleResult.insertId}`]);
       }
       await connection.commit();
       return { id: saleResult.insertId, subtotal, total: subtotal, costoTotal };

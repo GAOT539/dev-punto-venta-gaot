@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   try {
     const code = new URL(request.url).searchParams.get("code");
     if (!code?.trim()) {
-      return Response.json({ error: "El parámetro code es obligatorio" }, { status: 400 });
+      return Response.json({ products: await repository.getAll() });
     }
 
     const term = code.trim();

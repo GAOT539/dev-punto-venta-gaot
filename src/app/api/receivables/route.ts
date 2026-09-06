@@ -5,7 +5,7 @@ import { MysqlReceivablesRepository } from "@/core/infrastructure/repositories/m
 
 const repository = new MysqlReceivablesRepository();
 const creditSchema = z.object({ clienteNombre: z.string().trim().min(1), clienteIdentificacion: z.string().optional(), referencia: z.string().trim().min(1), monto: z.number().positive(), fechaVencimiento: z.string().optional() });
-const paymentSchema = z.object({ cuentaId: z.number().int().positive(), monto: z.number().positive(), metodoPago: z.enum(["efectivo", "transferencia"]) });
+const paymentSchema = z.object({ cuentaId: z.number().int().positive(), monto: z.number().positive(), metodoPago: z.enum(["efectivo", "transferencia"]), cajaTurnoId: z.number().int().positive() });
 
 export async function GET(request: Request) {
   try {

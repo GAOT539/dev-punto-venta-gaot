@@ -9,6 +9,7 @@ interface ProductVariantRow extends RowDataPacket {
   sku: string;
   codigo_barras: string | null;
   nombre: string | null;
+  categoria: string;
   precio_venta: number;
   costo: number;
   stock_actual: number;
@@ -23,6 +24,7 @@ function mapVariant(row: ProductVariantRow): ProductVariant {
     sku: row.sku,
     codigoBarras: row.codigo_barras,
     nombre: row.nombre,
+    categoria: row.categoria,
     precioVenta: Number(row.precio_venta),
     costo: Number(row.costo),
     stockActual: Number(row.stock_actual),
@@ -32,7 +34,7 @@ function mapVariant(row: ProductVariantRow): ProductVariant {
 }
 
 const variantSelect = `
-  SELECT v.id, v.producto_id, v.sku, v.codigo_barras, COALESCE(v.nombre, p.nombre) AS nombre, v.precio_venta, v.costo,
+  SELECT v.id, v.producto_id, v.sku, v.codigo_barras, COALESCE(v.nombre, p.nombre) AS nombre, p.categoria, v.precio_venta, v.costo,
          v.stock_actual, v.stock_minimo, v.activo
   FROM variantes_producto v
   JOIN productos p ON p.id = v.producto_id
@@ -45,8 +47,8 @@ export class MysqlProductRepository implements ProductRepository {
     try {
       await connection.beginTransaction();
       const [productResult] = await connection.execute<ResultSetHeader>(
-        "INSERT INTO productos (nombre, descripcion) VALUES (?, ?)",
-        [input.nombre.trim(), input.descripcion?.trim() || null],
+        "INSERT INTO productos (nombre, descripcion, categoria) VALUES (?, ?, ?)",
+        [input.nombre.trim(), input.descripcion?.trim() || null, input.categoria?.trim() || "General"],
       );
       const [variantResult] = await connection.execute<ResultSetHeader>(
         `INSERT INTO variantes_producto
@@ -99,6 +101,13 @@ export class MysqlProductRepository implements ProductRepository {
       `${variantSelect} WHERE v.activo = TRUE AND (v.sku LIKE ? OR v.codigo_barras LIKE ? OR v.nombre LIKE ? OR p.nombre LIKE ?)
        ORDER BY CASE WHEN v.sku = ? OR v.codigo_barras = ? THEN 0 ELSE 1 END, p.nombre ASC LIMIT 12`,
       [pattern, pattern, pattern, pattern, term.trim(), term.trim()],
+    );
+    return rows.map(mapVariant);
+  }
+
+  async getAll(): Promise<ProductVariant[]> {
+    const [rows] = await getMysqlPool().execute<ProductVariantRow[]>(
+      `${variantSelect} WHERE v.activo = TRUE ORDER BY p.categoria ASC, p.nombre ASC`
     );
     return rows.map(mapVariant);
   }

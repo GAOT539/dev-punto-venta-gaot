@@ -16,10 +16,11 @@ export class RegistrarCreditoClienteUseCase {
 export class RegistrarAbonoClienteUseCase {
   constructor(private readonly accounts: CustomerCreditRepository) {}
 
-  execute(input: { cuentaId: number; monto: number; metodoPago: PaymentMethod }) {
+  execute(input: { cuentaId: number; monto: number; metodoPago: PaymentMethod; cajaTurnoId: number }) {
     if (!Number.isInteger(input.cuentaId) || input.monto <= 0) {
       throw new ValidationError("La cuenta y el monto del abono son inválidos");
     }
+    if (!input.cajaTurnoId) throw new ValidationError("Se requiere un turno de caja abierto");
     return this.accounts.addPayment(input);
   }
 }

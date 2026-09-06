@@ -11,6 +11,7 @@ import type {
 export interface CreateProductInput {
   nombre: string;
   descripcion?: string;
+  categoria?: string;
   sku?: string;
   codigoBarras?: string;
   varianteNombre?: string;
@@ -25,6 +26,7 @@ export interface ProductRepository {
   findById(id: number): Promise<ProductVariant | null>;
   findByCode(code: string): Promise<ProductVariant | null>;
   search(term: string): Promise<ProductVariant[]>;
+  getAll(): Promise<ProductVariant[]>;
   listLowStock(): Promise<ProductVariant[]>;
   adjustStock(id: number, delta: number): Promise<ProductVariant>;
 }
