@@ -1,6 +1,16 @@
 CREATE DATABASE IF NOT EXISTS punto_venta;
 USE punto_venta;
 
+CREATE TABLE IF NOT EXISTS proveedores (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(180) NOT NULL,
+  identificacion VARCHAR(64) NULL,
+  telefono VARCHAR(40) NULL,
+  email VARCHAR(160) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_proveedores_nombre (nombre)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS productos (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   proveedor_id BIGINT UNSIGNED NULL,
@@ -10,7 +20,9 @@ CREATE TABLE IF NOT EXISTS productos (
   activo BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  INDEX idx_productos_activo_nombre (activo, nombre)
+  INDEX idx_productos_activo_nombre (activo, nombre),
+  INDEX idx_productos_proveedor (proveedor_id),
+  CONSTRAINT fk_productos_proveedor FOREIGN KEY (proveedor_id) REFERENCES proveedores(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS variantes_producto (
@@ -32,15 +44,6 @@ CREATE TABLE IF NOT EXISTS variantes_producto (
   CONSTRAINT fk_variantes_producto FOREIGN KEY (producto_id) REFERENCES productos(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS proveedores (
-  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  nombre VARCHAR(180) NOT NULL,
-  identificacion VARCHAR(64) NULL,
-  telefono VARCHAR(40) NULL,
-  email VARCHAR(160) NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_proveedores_nombre (nombre)
-) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS caja_turnos (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -66,6 +69,20 @@ CREATE TABLE IF NOT EXISTS movimientos_caja (
   CONSTRAINT fk_movimientos_caja_turno FOREIGN KEY (caja_turno_id) REFERENCES caja_turnos(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS cuentas_por_cobrar (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  cliente_nombre VARCHAR(180) NOT NULL,
+  cliente_identificacion VARCHAR(64) NULL,
+  referencia VARCHAR(120) NOT NULL,
+  monto_original DECIMAL(12,2) NOT NULL,
+  saldo DECIMAL(12,2) NOT NULL,
+  fecha_vencimiento DATE NULL,
+  estado ENUM('pendiente', 'pagada', 'vencida') NOT NULL DEFAULT 'pendiente',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_cxc_estado_vencimiento (estado, fecha_vencimiento),
+  INDEX idx_cxc_cliente (cliente_nombre)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS ventas (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   caja_turno_id BIGINT UNSIGNED NOT NULL,
@@ -77,7 +94,9 @@ CREATE TABLE IF NOT EXISTS ventas (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_ventas_fecha (created_at),
   INDEX idx_ventas_caja (caja_turno_id, created_at),
-  CONSTRAINT fk_ventas_caja FOREIGN KEY (caja_turno_id) REFERENCES caja_turnos(id) ON DELETE RESTRICT
+  INDEX idx_ventas_cuenta (cuenta_por_cobrar_id),
+  CONSTRAINT fk_ventas_caja FOREIGN KEY (caja_turno_id) REFERENCES caja_turnos(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_ventas_cuenta FOREIGN KEY (cuenta_por_cobrar_id) REFERENCES cuentas_por_cobrar(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS venta_detalles (
@@ -93,24 +112,6 @@ CREATE TABLE IF NOT EXISTS venta_detalles (
   CONSTRAINT fk_venta_detalles_variante FOREIGN KEY (variante_id) REFERENCES variantes_producto(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS cuentas_por_cobrar (
-  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  cliente_nombre VARCHAR(180) NOT NULL,
-  cliente_identificacion VARCHAR(64) NULL,
-  referencia VARCHAR(120) NOT NULL,
-  monto_original DECIMAL(12,2) NOT NULL,
-  saldo DECIMAL(12,2) NOT NULL,
-  fecha_vencimiento DATE NULL,
-  estado ENUM('pendiente', 'pagada', 'vencida') NOT NULL DEFAULT 'pendiente',
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_cxc_estado_vencimiento (estado, fecha_vencimiento),
-  INDEX idx_cxc_cliente (cliente_nombre)
-) ENGINE=InnoDB;
-
-ALTER TABLE productos ADD INDEX idx_productos_proveedor (proveedor_id);
-ALTER TABLE ventas ADD INDEX idx_ventas_cuenta (cuenta_por_cobrar_id);
-ALTER TABLE productos ADD CONSTRAINT fk_productos_proveedor FOREIGN KEY (proveedor_id) REFERENCES proveedores(id) ON DELETE SET NULL;
-ALTER TABLE ventas ADD CONSTRAINT fk_ventas_cuenta FOREIGN KEY (cuenta_por_cobrar_id) REFERENCES cuentas_por_cobrar(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS abonos_clientes (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -135,4 +136,14 @@ CREATE TABLE IF NOT EXISTS facturas_proveedores (
   UNIQUE KEY uq_factura_proveedor_numero (proveedor_id, numero_factura),
   INDEX idx_cxp_estado_vencimiento (estado, fecha_vencimiento),
   CONSTRAINT fk_facturas_proveedor FOREIGN KEY (proveedor_id) REFERENCES proveedores(id) ON DELETE RESTRICT
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS abonos_proveedores (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  factura_proveedor_id BIGINT UNSIGNED NOT NULL,
+  monto DECIMAL(12,2) NOT NULL,
+  metodo_pago ENUM('efectivo', 'transferencia') NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_abonos_prov_factura (factura_proveedor_id, created_at),
+  CONSTRAINT fk_abonos_prov_factura FOREIGN KEY (factura_proveedor_id) REFERENCES facturas_proveedores(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;

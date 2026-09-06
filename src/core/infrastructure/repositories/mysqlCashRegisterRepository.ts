@@ -31,8 +31,41 @@ export class MysqlCashRegisterRepository implements CashRegisterRepository {
   }
 
   async addMovement(input: { cajaTurnoId: number; tipo: "ingreso" | "retiro" | "venta"; monto: number; concepto: string; metodoPago?: "efectivo" | "transferencia" }): Promise<CashMovement> {
-    const [result] = await getMysqlPool().execute<ResultSetHeader>("INSERT INTO movimientos_caja (caja_turno_id, tipo, metodo_pago, monto, concepto) VALUES (?, ?, ?, ?, ?)", [input.cajaTurnoId, input.tipo, input.metodoPago ?? null, input.monto, input.concepto]);
-    return { id: result.insertId, cajaTurnoId: input.cajaTurnoId, tipo: input.tipo, metodoPago: input.metodoPago ?? null, monto: input.monto, concepto: input.concepto, createdAt: new Date() };
+    const connection = await getMysqlPool().getConnection();
+    try {
+      await connection.beginTransaction();
+      
+      const [cashRows] = await connection.execute<RowDataPacket[]>("SELECT id, estado FROM caja_turnos WHERE id = ? FOR UPDATE", [input.cajaTurnoId]);
+      if (!cashRows[0]) throw new Error("Caja no encontrada");
+      if (cashRows[0].estado !== "abierta") throw new Error("La caja está cerrada. No se pueden registrar movimientos.");
+
+      if (input.tipo === "retiro") {
+        const [sumRows] = await connection.execute<RowDataPacket[]>(`
+          SELECT COALESCE(SUM(CASE WHEN tipo = 'retiro' THEN -monto ELSE monto END), 0) as balance 
+          FROM movimientos_caja WHERE caja_turno_id = ? AND (tipo = 'ingreso' OR tipo = 'retiro' OR (tipo = 'venta' AND metodo_pago = 'efectivo'))
+        `, [input.cajaTurnoId]);
+        
+        const balanceActual = Number(sumRows[0]?.balance || 0);
+        
+        // Sumar también el monto inicial que no está en movimientos_caja
+        const [initRow] = await connection.execute<RowDataPacket[]>("SELECT monto_inicial FROM caja_turnos WHERE id = ?", [input.cajaTurnoId]);
+        const efectivoEsperado = balanceActual + Number(initRow[0].monto_inicial);
+
+        if (input.monto > efectivoEsperado) {
+          throw new Error("Saldo insuficiente en caja para realizar el retiro.");
+        }
+      }
+
+      const [result] = await connection.execute<ResultSetHeader>("INSERT INTO movimientos_caja (caja_turno_id, tipo, metodo_pago, monto, concepto) VALUES (?, ?, ?, ?, ?)", [input.cajaTurnoId, input.tipo, input.metodoPago ?? null, input.monto, input.concepto]);
+      await connection.commit();
+      
+      return { id: result.insertId, cajaTurnoId: input.cajaTurnoId, tipo: input.tipo, metodoPago: input.metodoPago ?? null, monto: input.monto, concepto: input.concepto, createdAt: new Date() };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   }
 
   async close(id: number, efectivoReal: number): Promise<CashRegister> {

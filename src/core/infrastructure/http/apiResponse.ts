@@ -6,6 +6,12 @@ export function errorResponse(error: unknown) {
     return Response.json({ error: error.message, code: error.code }, { status });
   }
 
+  if (error instanceof Error) {
+    if (error.message.includes("cerrad") || error.message.includes("insuficiente")) {
+      return Response.json({ error: error.message, code: "CONFLICT" }, { status: 409 });
+    }
+  }
+
   console.error(error);
-  return Response.json({ error: "Error interno del servidor" }, { status: 500 });
+  return Response.json({ error: error instanceof Error ? error.message : "Error interno del servidor" }, { status: 500 });
 }

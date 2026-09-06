@@ -1,5 +1,4 @@
 import { errorResponse } from "@/core/infrastructure/http/apiResponse";
-import { getMysqlPool } from "@/core/infrastructure/database/mysqlConnection";
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {

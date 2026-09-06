@@ -7,6 +7,7 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-punto_venta}
       MYSQL_USER: ${MYSQL_USER:-punto_venta}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-punto_venta_dev}
+      TZ: America/Guayaquil
     ports:
       - "3314:3306"
     volumes:
@@ -29,6 +30,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      TZ: America/Guayaquil
       DB_HOST: db
       DB_PORT: 3306
       DB_NAME: ${MYSQL_DATABASE:-punto_venta}

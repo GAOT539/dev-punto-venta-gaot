@@ -10,6 +10,7 @@ const poolConfig = {
   connectionLimit: Number(process.env.DB_POOL_SIZE ?? 10),
   queueLimit: 0,
   decimalNumbers: true,
+  timezone: '-05:00',
 };
 
 let pool: Pool | undefined;

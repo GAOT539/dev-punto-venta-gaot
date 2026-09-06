@@ -56,7 +56,7 @@ export class MysqlProductRepository implements ProductRepository {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           productResult.insertId,
-          input.sku ?? `SKU-${Date.now().toString(36).toUpperCase()}`,
+          input.sku ?? `SKU-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2,5).toUpperCase()}`,
           input.codigoBarras?.trim() || null,
           input.varianteNombre?.trim() || null,
           input.precioVenta,

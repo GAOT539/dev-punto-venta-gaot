@@ -1,4 +1,4 @@
-export type PaymentMethod = "efectivo" | "transferencia" | "credito" | "CREDITO";
+export type PaymentMethod = "efectivo" | "transferencia" | "credito";
 export type CashMovementType = "ingreso" | "retiro" | "venta";
 
 export interface Product {
