@@ -1,69 +1,95 @@
+"use client";
+
 import Image from "next/image";
+import { FormEvent, useState } from "react";
+
+type CartItem = {
+  id: number;
+  sku: string;
+  nombre: string | null;
+  precioVenta: number;
+  cantidad: number;
+};
+
+const navItems = ["Resumen", "Punto de venta", "Inventario", "Caja", "Cuentas por cobrar"];
 
 export default function Home() {
+  const [code, setCode] = useState("");
+  const [message, setMessage] = useState("Listo para escanear");
+  const [cart, setCart] = useState<CartItem[]>([]);
+
+  const total = cart.reduce((sum, item) => sum + item.precioVenta * item.cantidad, 0);
+
+  async function addProduct(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedCode = code.trim();
+    if (!trimmedCode) return;
+
+    setMessage("Buscando producto...");
+    try {
+      const response = await fetch(`/api/products?code=${encodeURIComponent(trimmedCode)}`);
+      if (!response.ok) throw new Error("Producto no encontrado");
+      const product = await response.json();
+      setCart((current) => {
+        const existing = current.find((item) => item.id === product.id);
+        if (existing) {
+          return current.map((item) => item.id === product.id ? { ...item, cantidad: item.cantidad + 1 } : item);
+        }
+        return [...current, { ...product, cantidad: 1 }];
+      });
+      setCode("");
+      setMessage("Producto agregado");
+    } catch {
+      setMessage("No se encontró el producto o la base de datos no está disponible");
+    }
+  }
+
+  function changeQuantity(id: number, amount: number) {
+    setCart((current) => current.flatMap((item) => {
+      if (item.id !== id) return [item];
+      const cantidad = item.cantidad + amount;
+      return cantidad > 0 ? [{ ...item, cantidad }] : [];
+    }));
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <Image src="/logo.png" alt="Punto de Venta" width={52} height={52} priority />
+          <div><strong>GAOT</strong><span>Punto de venta</span></div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <nav aria-label="Navegación principal">
+          {navItems.map((item, index) => <button className={`nav-item ${index === 1 ? "active" : ""}`} key={item}>{item}</button>)}
+        </nav>
+        <div className="sidebar-footer"><span className="status-dot" /> Sistema operativo</div>
+      </aside>
+
+      <section className="workspace">
+        <header className="topbar"><div><p className="eyebrow">Operación diaria</p><h1>Punto de venta</h1></div><div className="date-chip">Turno sin abrir <span>•</span> Hoy</div></header>
+
+        <div className="dashboard-grid">
+          <section className="pos-panel panel">
+            <div className="section-heading"><div><p className="eyebrow">Venta rápida</p><h2>Escanear productos</h2></div><span className="kbd">ENTER</span></div>
+            <form className="scanner" onSubmit={addProduct}>
+              <span className="scan-icon">⌕</span>
+              <input autoFocus value={code} onChange={(event) => setCode(event.target.value)} placeholder="Código de barras o SKU" aria-label="Código de barras o SKU" />
+              <button type="submit">Agregar</button>
+            </form>
+            <p className="helper-text">{message}</p>
+            <div className="cart-table-wrap"><table><thead><tr><th>Producto</th><th>SKU</th><th>Cantidad</th><th className="align-right">Subtotal</th></tr></thead><tbody>
+              {cart.length === 0 ? <tr><td colSpan={4} className="empty-state">Escanea un producto para iniciar la venta</td></tr> : cart.map((item) => <tr key={item.id}><td><strong>{item.nombre || "Producto"}</strong></td><td className="muted">{item.sku}</td><td><div className="quantity"><button onClick={() => changeQuantity(item.id, -1)} aria-label="Disminuir cantidad">−</button><span>{item.cantidad}</span><button onClick={() => changeQuantity(item.id, 1)} aria-label="Aumentar cantidad">+</button></div></td><td className="align-right price">${(item.precioVenta * item.cantidad).toFixed(2)}</td></tr>)}
+            </tbody></table></div>
+            <div className="checkout"><div><span>Total a cobrar</span><strong>${total.toFixed(2)}</strong></div><button className="primary-action" disabled={cart.length === 0}>Cobrar venta <span>→</span></button></div>
+          </section>
+
+          <aside className="right-column">
+            <section className="metric-row"><div className="metric-card"><span>Ventas del día</span><strong>$0.00</strong><small>Sin movimientos</small></div><div className="metric-card accent"><span>Margen estimado</span><strong>0%</strong><small>Precio venta vs costo</small></div></section>
+            <section className="panel alerts"><div className="section-heading"><div><p className="eyebrow">Requiere atención</p><h2>Alertas</h2></div><button className="text-button">Ver todo</button></div><div className="alert-item orange"><span>!</span><div><strong>Stock mínimo</strong><p>Conecta la base de datos para consultar alertas</p></div></div><div className="alert-item red"><span>◷</span><div><strong>Facturas por vencer</strong><p>Sin facturas pendientes registradas</p></div></div></section>
+            <section className="panel quick-card"><p className="eyebrow">Caja</p><h2>Turno pendiente</h2><p>Abre la caja para comenzar a registrar ventas y movimientos.</p><button className="secondary-action">Abrir caja <span>→</span></button></section>
+          </aside>
         </div>
-      </main>
-    </div>
+      </section>
+    </main>
   );
 }

@@ -1,0 +1,50 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-punto_venta}
+      MYSQL_USER: ${MYSQL_USER:-punto_venta}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-punto_venta_dev}
+    ports:
+      - "3314:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - punto-venta
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE:-punto_venta}
+      DB_USER: ${MYSQL_USER:-punto_venta}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-punto_venta_dev}
+      PORT: 3000
+    ports:
+      - "4040:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - punto-venta
+
+volumes:
+  mysql_data:
+
+networks:
+  punto-venta:
+    driver: bridge

@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sistema Punto de Venta
 
-## Getting Started
+Aplicación de punto de venta e inventario construida con Next.js App Router, TypeScript, Tailwind CSS, MySQL 8 y arquitectura hexagonal.
 
-First, run the development server:
+## Requisitos
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Windows 11
+- Docker Desktop con Compose habilitado
+- Node.js 22+ para desarrollo local
+- PowerShell 5.1 o superior
+
+## Instalación en Windows
+
+Desde PowerShell, en la carpeta del proyecto:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\instalar.ps1
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+El instalador solicita elevación automáticamente, configura `punto.caja.local`, crea la regla del Firewall TCP `4040`, levanta MySQL y Next.js, y crea el acceso directo del escritorio.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- Desde la PC: `http://punto.caja.local:4040`
+- Desde otro dispositivo de la misma red: `http://IP_DE_LA_PC:4040`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+La red de Windows debe estar marcada como privada para que la regla del Firewall permita el acceso local.
 
-## Learn More
+## Desarrollo
 
-To learn more about Next.js, take a look at the following resources:
+Para desarrollo completo con MySQL y hot reload:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+La aplicación queda disponible en `http://localhost:4040`.
 
-## Deploy on Vercel
+Para ejecutar Next.js fuera de Docker, copia `.env.example` a `.env.local`, ajusta `DB_HOST` y `DB_PORT`, e inicia:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```powershell
+npm install
+npm run dev
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Producción local
+
+```powershell
+docker compose up -d --build
+```
+
+El servicio web espera el healthcheck de MySQL antes de arrancar. El build de Next.js usa `output: 'standalone'` y el Dockerfile copia únicamente el runtime necesario.
+
+## Base de datos
+
+MySQL ejecuta `database/schema.sql` únicamente cuando se crea el volumen por primera vez. Para reinicializar datos en desarrollo:
+
+```powershell
+docker compose down -v
+docker compose up -d --build
+```
+
+Las credenciales locales por defecto están parametrizadas en `docker-compose.yml`; usa un archivo `.env` para personalizarlas.
+
+## API inicial
+
+- `GET /api/products?code=SKU-...`: busca una variante por SKU o código de barras.
+- `POST /api/products`: crea producto y variante.
+- `GET /api/inventory/alerts`: devuelve productos bajo el stock mínimo.
+- `GET /api/cash`: consulta la caja abierta.
+- `POST /api/cash`: abre, cierra o registra un movimiento manual según `action`.
+- `POST /api/sales`: registra una venta y descuenta stock dentro de una transacción.
+
+## Validaciones
+
+```powershell
+npm run lint
+npm run typecheck
+npm run test
+npm run build
+docker compose config
+docker compose -f docker-compose.yml -f docker-compose.dev.yml config
+```
