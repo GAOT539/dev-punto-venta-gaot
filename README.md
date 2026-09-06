@@ -69,6 +69,10 @@ Las credenciales locales por defecto están parametrizadas en `docker-compose.ym
 - `GET /api/cash`: consulta la caja abierta.
 - `POST /api/cash`: abre, cierra o registra un movimiento manual según `action`.
 - `POST /api/sales`: registra una venta y descuenta stock dentro de una transacción.
+- `GET /api/receivables`: lista cuentas por cobrar; `POST` registra créditos o abonos según `action`.
+- `GET /api/payables/due?days=7`: lista facturas de proveedores próximas a vencer.
+
+El POS permite buscar por SKU, código de barras o parte del nombre. Una venta con método `credito` requiere `clienteCredito`; las ventas de contado no crean cuentas de clientes.
 
 ## Validaciones
 

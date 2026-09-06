@@ -13,10 +13,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Punto de Venta",
-  description: "Operación de caja e inventario",
+  title: "dev-punto-venta-gaot",
+  description: "Sistema de Punto de Venta Local",
   icons: {
     icon: "/logo.png",
+    shortcut: "/logo.png",
     apple: "/logo.png",
   },
 };

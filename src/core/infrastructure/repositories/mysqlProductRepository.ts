@@ -32,9 +32,10 @@ function mapVariant(row: ProductVariantRow): ProductVariant {
 }
 
 const variantSelect = `
-  SELECT id, producto_id, sku, codigo_barras, nombre, precio_venta, costo,
-         stock_actual, stock_minimo, activo
-  FROM variantes_producto
+  SELECT v.id, v.producto_id, v.sku, v.codigo_barras, COALESCE(v.nombre, p.nombre) AS nombre, v.precio_venta, v.costo,
+         v.stock_actual, v.stock_minimo, v.activo
+  FROM variantes_producto v
+  JOIN productos p ON p.id = v.producto_id
 `;
 
 export class MysqlProductRepository implements ProductRepository {
@@ -64,7 +65,7 @@ export class MysqlProductRepository implements ProductRepository {
       );
       await connection.commit();
       const [rows] = await connection.execute<ProductVariantRow[]>(
-        `${variantSelect} WHERE id = ?`,
+        `${variantSelect} WHERE v.id = ?`,
         [variantResult.insertId],
       );
       return mapVariant(rows[0]);
@@ -78,7 +79,7 @@ export class MysqlProductRepository implements ProductRepository {
 
   async findById(id: number): Promise<ProductVariant | null> {
     const [rows] = await getMysqlPool().execute<ProductVariantRow[]>(
-      `${variantSelect} WHERE id = ? AND activo = TRUE`,
+      `${variantSelect} WHERE v.id = ? AND v.activo = TRUE`,
       [id],
     );
     return rows[0] ? mapVariant(rows[0]) : null;
@@ -86,7 +87,7 @@ export class MysqlProductRepository implements ProductRepository {
 
   async findByCode(code: string): Promise<ProductVariant | null> {
     const [rows] = await getMysqlPool().execute<ProductVariantRow[]>(
-      `${variantSelect} WHERE (sku = ? OR codigo_barras = ?) AND activo = TRUE`,
+      `${variantSelect} WHERE (v.sku = ? OR v.codigo_barras = ?) AND v.activo = TRUE`,
       [code, code],
     );
     return rows[0] ? mapVariant(rows[0]) : null;
@@ -95,16 +96,16 @@ export class MysqlProductRepository implements ProductRepository {
   async search(term: string): Promise<ProductVariant[]> {
     const pattern = `%${term.trim()}%`;
     const [rows] = await getMysqlPool().execute<ProductVariantRow[]>(
-      `${variantSelect} WHERE activo = TRUE AND (sku LIKE ? OR codigo_barras LIKE ? OR nombre LIKE ?)
-       ORDER BY CASE WHEN sku = ? OR codigo_barras = ? THEN 0 ELSE 1 END, nombre ASC LIMIT 12`,
-      [pattern, pattern, pattern, term.trim(), term.trim()],
+      `${variantSelect} WHERE v.activo = TRUE AND (v.sku LIKE ? OR v.codigo_barras LIKE ? OR v.nombre LIKE ? OR p.nombre LIKE ?)
+       ORDER BY CASE WHEN v.sku = ? OR v.codigo_barras = ? THEN 0 ELSE 1 END, p.nombre ASC LIMIT 12`,
+      [pattern, pattern, pattern, pattern, term.trim(), term.trim()],
     );
     return rows.map(mapVariant);
   }
 
   async listLowStock(): Promise<ProductVariant[]> {
     const [rows] = await getMysqlPool().execute<ProductVariantRow[]>(
-      `${variantSelect} WHERE activo = TRUE AND stock_actual <= stock_minimo ORDER BY stock_actual ASC, nombre ASC`,
+      `${variantSelect} WHERE v.activo = TRUE AND v.stock_actual <= v.stock_minimo ORDER BY v.stock_actual ASC, nombre ASC`,
     );
     return rows.map(mapVariant);
   }
