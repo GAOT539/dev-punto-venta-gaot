@@ -31,6 +31,13 @@ const paymentSchema = z.object({
   cajaTurnoId: z.number().int().positive()
 });
 
+const createSchema = z.object({
+  action: z.literal("create"),
+  proveedor: z.string().min(1),
+  factura: z.string().min(1),
+  monto: z.number().positive()
+});
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -71,6 +78,39 @@ export async function POST(request: Request) {
           connection.release();
        }
     }
+    
+    if (body.action === "create") {
+       const input = createSchema.parse(body);
+       const pool = getMysqlPool();
+       const connection = await pool.getConnection();
+       try {
+          await connection.beginTransaction();
+          
+          let proveedorId;
+          const [provRows] = await connection.execute<RowDataPacket[]>("SELECT id FROM proveedores WHERE nombre = ? LIMIT 1", [input.proveedor]);
+          if (provRows.length > 0) {
+             proveedorId = provRows[0].id;
+          } else {
+             const [insertProv] = await connection.execute<any>("INSERT INTO proveedores (nombre) VALUES (?)", [input.proveedor]);
+             proveedorId = insertProv.insertId;
+          }
+          
+          const today = new Date().toISOString().split('T')[0];
+          await connection.execute(
+            "INSERT INTO facturas_proveedores (proveedor_id, numero_factura, monto_original, saldo, fecha_emision, fecha_vencimiento) VALUES (?, ?, ?, ?, ?, ?)", 
+            [proveedorId, input.factura, input.monto, input.monto, today, today]
+          );
+          
+          await connection.commit();
+          return Response.json({ success: true });
+       } catch (error) {
+          await connection.rollback();
+          throw error;
+       } finally {
+          connection.release();
+       }
+    }
+
     return Response.json({ error: "Acción no soportada" }, { status: 400 });
   } catch (error) {
     return errorResponse(error);

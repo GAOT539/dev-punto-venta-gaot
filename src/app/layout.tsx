@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "dev-punto-venta-gaot",
+  title: "DPVG-CAJA",
   description: "Sistema de Punto de Venta Local",
   icons: {
     icon: "/logo.png",

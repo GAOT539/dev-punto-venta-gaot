@@ -14,7 +14,7 @@ type SaleRec = { id: number, created_at: string, metodo_pago: string, total: str
 type MovRec = { id: number, created_at: string, concepto: string, tipo: string, monto: string | number };
 type UnifiedOp = { id: string; realId: number; isSale: boolean; hora: string; dateObj: Date; metodo: string; tipo: string; total: number; concepto?: string };
 
-const navItems = ["Resumen", "Punto de venta", "Historial / Caja", "Inventario", "Cuentas por cobrar", "Cuentas por pagar"];
+const navItems = ["Resumen", "Punto de venta", "Historial / Caja", "Inventario", "Cuentas por pagar"];
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("Resumen");
@@ -39,7 +39,7 @@ export default function Home() {
   const [salesDate, setSalesDate] = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' }));
   const [salesData, setSalesData] = useState<{ventas: SaleRec[], movimientos: MovRec[]}>({ventas: [], movimientos: []});
   const [expandedOp, setExpandedOp] = useState<string | null>(null);
-  const [expandedDetails, setExpandedDetails] = useState<any[]>([]);
+  const [expandedDetails, setExpandedDetails] = useState<{id: number, producto_nombre: string, cantidad: number, subtotal: number | string}[]>([]);
 
   // Inventory States
   const [inventorySearch, setInventorySearch] = useState("");
@@ -58,6 +58,7 @@ export default function Home() {
   const [payablePayments, setPayablePayments] = useState<PayablePayment[]>([]);
   const [expandedPayable, setExpandedPayable] = useState<number | null>(null);
   const [payableModalData, setPayableModalData] = useState<Payable | null>(null);
+  const [newPayableModal, setNewPayableModal] = useState(false);
 
   // Trigger Refreshes
   async function fetchProducts() {
@@ -199,6 +200,15 @@ export default function Home() {
     } finally { setIsSubmitting(false); }
   }
 
+  async function submitNewPayable(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); if(isSubmitting) return; setIsSubmitting(true);
+    try {
+      const form = new FormData(e.currentTarget);
+      const res = await fetch("/api/payables", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create", proveedor: form.get("proveedor"), factura: form.get("factura"), monto: Number(form.get("monto")) }) });
+      if(res.ok) { setNewPayableModal(false); showToast("Deuda registrada"); revalidateAll(); } else { const err = await res.json(); showToast(err.error || "Error"); }
+    } finally { setIsSubmitting(false); }
+  }
+
   // --- Computed Values ---
   const filteredInventory = useMemo(() => {
     let list = inventoryResults;
@@ -253,7 +263,7 @@ export default function Home() {
     {toast && <div className="fixed top-5 right-5 z-50 bg-gray-900 text-white px-6 py-3 rounded shadow-xl transition-all font-semibold">{toast}</div>}
     
     <aside className="sidebar">
-      <div className="brand"><Image src="/logo.png" alt="Punto de Venta" width={52} height={52} priority /><div><strong>GAOT</strong><span>Punto de venta</span></div></div>
+      <div className="brand"><Image src="/logo.png" alt="Punto de Venta" width={52} height={52} priority className="bg-transparent" /><div><strong>DPVG</strong><span>Punto de venta</span></div></div>
       <nav aria-label="Navegación principal">
         {navItems.map((item) => <button type="button" className={`nav-item ${activeTab === item ? "active" : ""}`} key={item} onClick={() => setActiveTab(item)}>{item}</button>)}
       </nav>
@@ -268,7 +278,7 @@ export default function Home() {
 
       {activeTab === "Resumen" && (
         <div className="flex flex-col gap-6">
-           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
              <div className="panel flex flex-col gap-2">
                <p className="eyebrow">Ventas del Mes</p>
                <h2 className="text-3xl font-bold">${dashboard?.ventasTotalesMes?.toFixed(2) || "0.00"}</h2>
@@ -316,8 +326,8 @@ export default function Home() {
       )}
 
       {activeTab === "Punto de venta" && (
-        <div className="dashboard-grid">
-          <section className="pos-panel panel">
+        <div className="flex flex-col lg:flex-row gap-6">
+          <section className="pos-panel panel flex-1">
             <div className="section-heading"><div><p className="eyebrow">Venta rápida</p><h2>Escanear productos</h2></div><span className="kbd">ENTER</span></div>
             <form className="scanner search-box" onSubmit={searchProduct}>
               <span className="scan-icon">⌕</span>
@@ -337,7 +347,7 @@ export default function Home() {
             <div className="checkout">
               <div><span>Total a cobrar</span><strong>${total.toFixed(2)}</strong></div>
               <div className="checkout-controls">
-                <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as typeof paymentMethod)}><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="CREDITO">Crédito</option></select>
+                <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as typeof paymentMethod)}><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="CREDITO" disabled={true} className="opacity-50 cursor-not-allowed" title="No disponible temporalmente">Crédito</option></select>
                 {paymentMethod === "CREDITO" && <input value={creditCustomer} onChange={(event) => setCreditCustomer(event.target.value)} placeholder="Cliente" />}
                 
                 <div className="flex flex-col items-end">
@@ -348,7 +358,7 @@ export default function Home() {
             </div>
           </section>
           
-          <aside className="right-column">
+          <aside className="w-full lg:w-80 flex flex-col gap-6">
             <section className="metric-row">
               <div className="metric-card"><span>Ventas del día</span><strong>${desgloseVentasEfectivo + desgloseVentasTransf + desgloseVentasCredito}</strong><small>Acumulado hoy</small></div>
               <div className="metric-card accent"><span>Artículos</span><strong>{cart.reduce((s, i) => s + i.cantidad, 0)}</strong><small>En el carrito</small></div>
@@ -533,7 +543,10 @@ export default function Home() {
       {activeTab === "Cuentas por pagar" && (
          <div className="flex flex-col gap-6">
             <section className="panel">
-              <div className="section-heading mb-0"><div><p className="eyebrow">Proveedores</p><h2>Cuentas por Pagar</h2></div></div>
+              <div className="section-heading mb-0">
+                 <div><p className="eyebrow">Proveedores</p><h2>Cuentas por Pagar</h2></div>
+                 <button className="primary-action text-sm !py-2 !px-4" onClick={() => setNewPayableModal(true)}>+ Ingresar</button>
+              </div>
               
               <div className="cart-table-wrap mt-6">
                 <table>
@@ -646,6 +659,29 @@ export default function Home() {
              </label>
              <p className="text-xs text-red-500 mb-4">* Este monto será descontado (retiro) de la caja activa automáticamente.</p>
              <button className={"primary-action modal-submit " + (isSubmitting ? "opacity-50" : "")} disabled={isSubmitting} type="submit">Confirmar Pago</button>
+          </form>
+        </section>
+      </div>
+    )}
+
+    {/* MODAL NUEVA CUENTA POR PAGAR */}
+    {newPayableModal && (
+      <div className="modal-backdrop" role="presentation">
+        <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+          <button type="button" className="modal-close" onClick={() => setNewPayableModal(false)} aria-label="Cerrar">×</button>
+          <p className="eyebrow">Proveedores</p>
+          <h2 id="modal-title">Ingresar Deuda / Factura</h2>
+          <form onSubmit={submitNewPayable} className="mt-4">
+             <label>Nombre del Proveedor
+               <input name="proveedor" required autoFocus placeholder="Ej. Distribuidora XYZ" />
+             </label>
+             <label>Factura o Concepto
+               <input name="factura" required placeholder="Ej. FACT-001 o Mercadería" />
+             </label>
+             <label>Deuda Total a Pagar
+               <input name="monto" type="number" min="0.01" step="0.01" required />
+             </label>
+             <button className={"primary-action modal-submit " + (isSubmitting ? "opacity-50" : "")} disabled={isSubmitting} type="submit">Guardar Deuda</button>
           </form>
         </section>
       </div>
