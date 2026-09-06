@@ -24,7 +24,6 @@ CREATE TABLE IF NOT EXISTS variantes_producto (
   activo BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
   UNIQUE KEY uq_variantes_sku (sku),
   UNIQUE KEY uq_variantes_codigo_barras (codigo_barras),
   INDEX idx_variantes_stock_alerta (activo, stock_actual, stock_minimo),

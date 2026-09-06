@@ -11,7 +11,7 @@ services:
       DB_USER: ${MYSQL_USER:-punto_venta}
       DB_PASSWORD: ${MYSQL_PASSWORD:-punto_venta_dev}
       WATCHPACK_POLLING: "true"
-    command: npm run dev
+    command: sh -c "npm install && npm run dev"
     volumes:
       - .:/app
       - /app/node_modules
