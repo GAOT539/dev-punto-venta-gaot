@@ -1,4 +1,4 @@
-export type PaymentMethod = "efectivo" | "transferencia";
+export type PaymentMethod = "efectivo" | "transferencia" | "credito";
 export type CashMovementType = "ingreso" | "retiro" | "venta";
 
 export interface Product {
@@ -51,6 +51,11 @@ export interface SaleInput {
   cajaTurnoId: number;
   metodoPago: PaymentMethod;
   lineas: SaleLineInput[];
+  clienteCredito?: {
+    nombre: string;
+    identificacion?: string;
+    fechaVencimiento?: string;
+  };
 }
 
 export interface SaleSummary {

@@ -3,6 +3,7 @@ USE punto_venta;
 
 CREATE TABLE IF NOT EXISTS productos (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  proveedor_id BIGINT UNSIGNED NULL,
   nombre VARCHAR(160) NOT NULL,
   descripcion VARCHAR(500) NULL,
   activo BOOLEAN NOT NULL DEFAULT TRUE,
@@ -67,7 +68,8 @@ CREATE TABLE IF NOT EXISTS movimientos_caja (
 CREATE TABLE IF NOT EXISTS ventas (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   caja_turno_id BIGINT UNSIGNED NOT NULL,
-  metodo_pago ENUM('efectivo', 'transferencia') NOT NULL,
+  metodo_pago ENUM('efectivo', 'transferencia', 'credito') NOT NULL,
+  cuenta_por_cobrar_id BIGINT UNSIGNED NULL,
   subtotal DECIMAL(12,2) NOT NULL,
   total DECIMAL(12,2) NOT NULL,
   costo_total DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -103,6 +105,11 @@ CREATE TABLE IF NOT EXISTS cuentas_por_cobrar (
   INDEX idx_cxc_estado_vencimiento (estado, fecha_vencimiento),
   INDEX idx_cxc_cliente (cliente_nombre)
 ) ENGINE=InnoDB;
+
+ALTER TABLE productos ADD INDEX idx_productos_proveedor (proveedor_id);
+ALTER TABLE ventas ADD INDEX idx_ventas_cuenta (cuenta_por_cobrar_id);
+ALTER TABLE productos ADD CONSTRAINT fk_productos_proveedor FOREIGN KEY (proveedor_id) REFERENCES proveedores(id) ON DELETE SET NULL;
+ALTER TABLE ventas ADD CONSTRAINT fk_ventas_cuenta FOREIGN KEY (cuenta_por_cobrar_id) REFERENCES cuentas_por_cobrar(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS abonos_clientes (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

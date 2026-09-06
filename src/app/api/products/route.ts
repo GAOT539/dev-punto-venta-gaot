@@ -20,12 +20,14 @@ const repository = new MysqlProductRepository();
 export async function GET(request: Request) {
   try {
     const code = new URL(request.url).searchParams.get("code");
-    if (!code) {
+    if (!code?.trim()) {
       return Response.json({ error: "El parámetro code es obligatorio" }, { status: 400 });
     }
 
-    const product = await repository.findByCode(code.trim());
-    return product ? Response.json(product) : Response.json({ error: "Producto no encontrado" }, { status: 404 });
+    const term = code.trim();
+    const product = await repository.findByCode(term);
+    if (product) return Response.json(product);
+    return Response.json({ products: await repository.search(term) });
   } catch (error) {
     return errorResponse(error);
   }

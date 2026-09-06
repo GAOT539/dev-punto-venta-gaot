@@ -92,6 +92,16 @@ export class MysqlProductRepository implements ProductRepository {
     return rows[0] ? mapVariant(rows[0]) : null;
   }
 
+  async search(term: string): Promise<ProductVariant[]> {
+    const pattern = `%${term.trim()}%`;
+    const [rows] = await getMysqlPool().execute<ProductVariantRow[]>(
+      `${variantSelect} WHERE activo = TRUE AND (sku LIKE ? OR codigo_barras LIKE ? OR nombre LIKE ?)
+       ORDER BY CASE WHEN sku = ? OR codigo_barras = ? THEN 0 ELSE 1 END, nombre ASC LIMIT 12`,
+      [pattern, pattern, pattern, term.trim(), term.trim()],
+    );
+    return rows.map(mapVariant);
+  }
+
   async listLowStock(): Promise<ProductVariant[]> {
     const [rows] = await getMysqlPool().execute<ProductVariantRow[]>(
       `${variantSelect} WHERE activo = TRUE AND stock_actual <= stock_minimo ORDER BY stock_actual ASC, nombre ASC`,
