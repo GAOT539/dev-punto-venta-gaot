@@ -38,7 +38,9 @@ services:
       DB_PASSWORD: ${MYSQL_PASSWORD:-punto_venta_dev}
       PORT: 3000
     ports:
-      - "4040:3000"
+      - "4040:4040"
+    volumes:
+      - ./certs:/app/certs:ro
     depends_on:
       db:
         condition: service_healthy

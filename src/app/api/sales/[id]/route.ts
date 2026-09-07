@@ -9,9 +9,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const pool = await import("@/core/infrastructure/database/mysqlConnection").then(m => m.getMysqlPool());
     
     const [detalles] = await pool.execute(`
-      SELECT vd.id, vd.cantidad, vd.precio_unitario, vd.subtotal, v.nombre as producto_nombre, v.sku
+      SELECT vd.id, vd.cantidad, vd.precio_unitario, vd.subtotal, COALESCE(v.nombre, p.nombre) as producto_nombre, v.sku
       FROM venta_detalles vd
       JOIN variantes_producto v ON vd.variante_id = v.id
+      JOIN productos p ON p.id = v.producto_id
       WHERE vd.venta_id = ?
     `, [id]);
 

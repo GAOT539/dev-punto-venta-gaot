@@ -6,7 +6,7 @@ import { MysqlProductRepository } from "@/core/infrastructure/repositories/mysql
 const productSchema = z.object({
   nombre: z.string().trim().min(1),
   descripcion: z.string().optional(),
-  sku: z.string().trim().min(1).optional(),
+  sku: z.string().trim().optional().or(z.literal('')),
   codigoBarras: z.string().trim().min(1).optional(),
   varianteNombre: z.string().optional(),
   precioVenta: z.number().nonnegative(),

@@ -3,6 +3,11 @@
 import Image from "next/image";
 import React, { FormEvent, useEffect, useState, useMemo } from "react";
 
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer
+} from 'recharts';
+import { toast } from "sonner";
+
 type Product = { id: number; sku: string; nombre: string | null; categoria: string; precioVenta: number; costo: number; stockActual: number; stockMinimo: number };
 type CartItem = Product & { cantidad: number };
 type Cash = { id: number; montoInicial: number; efectivoEsperado: number | null; estado: "abierta" | "cerrada" } | null;
@@ -11,18 +16,21 @@ type Account = { id: number; cliente_nombre: string; monto_original: number; sal
 type Payable = { id: number; proveedor_id: number; proveedor_nombre: string; numero_factura: string; monto_original: number; saldo: number; estado: string; created_at: string };
 type PayablePayment = { id: number; factura_proveedor_id: number; monto: number; metodo_pago: string; created_at: string };
 type SaleRec = { id: number, created_at: string, metodo_pago: string, total: string | number };
-type MovRec = { id: number, created_at: string, concepto: string, tipo: string, monto: string | number };
+type MovRec = { id: number, created_at: string, concepto: string, tipo: string, monto: string | number, metodo_pago?: string };
 type UnifiedOp = { id: string; realId: number; isSale: boolean; hora: string; dateObj: Date; metodo: string; tipo: string; total: number; concepto?: string };
 
-const navItems = ["Resumen", "Punto de venta", "Historial / Caja", "Inventario", "Cuentas por pagar"];
+const navItems = ["Resumen", "Reportes", "Punto de venta", "Historial / Caja", "Inventario", "Cuentas por pagar"];
+const COLORS = ['#88c9dd', '#cfe86b', '#f3b45c', '#e77c70', '#8b5cf6', '#3b82f6'];
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("Resumen");
-  const [toast, setToast] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Dashboard
-  const [dashboard, setDashboard] = useState<{ ventasTotalesMes?: number; valorInventario?: number; rankingMejoresDias?: {fecha: string; total: number; cantidad: number; egresos: number; neto: number}[]; desgloseHoy?: {metodo: string; total: number}[] } | null>(null);
+  const [dashboard, setDashboard] = useState<{ cuentasPorPagar?: number; ventasTotalesMes?: number; egresosTotalesMes?: number; egresosHoy?: number; valorInventario?: number; rankingMejoresDias?: {fecha: string; total: number; cantidad: number; egresos: number; neto: number; margen: number}[]; desgloseHoy?: {metodo: string; total: number}[] } | null>(null);
+
+  // Reports
+  const [reports, setReports] = useState<any>(null);
 
   // POS States
   const [code, setCode] = useState("");
@@ -47,6 +55,17 @@ export default function Home() {
   const [inventoryAlerts, setInventoryAlerts] = useState<Product[]>([]);
   const [invCategoryFilter, setInvCategoryFilter] = useState("Todas");
   const [productModal, setProductModal] = useState<Partial<Product> | null>(null);
+  const [invSortConfig, setInvSortConfig] = useState<{key: string, direction: 'asc' | 'desc'} | null>({ key: 'nombre', direction: 'asc' });
+
+  const requestInvSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (invSortConfig && invSortConfig.key === key && invSortConfig.direction === 'asc') direction = 'desc';
+    setInvSortConfig({ key, direction });
+  };
+
+  // Reports States
+  const [reportsStartDate, setReportsStartDate] = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' }));
+  const [reportsEndDate, setReportsEndDate] = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' }));
 
   // Receivables States
   const [receivables, setReceivables] = useState<Account[]>([]);
@@ -74,14 +93,27 @@ export default function Home() {
     try { const res = await fetch(`/api/sales?date=${salesDate}`); const data = await res.json(); if (!data.error) setSalesData(data); } catch {}
   }
 
+  async function fetchReportsData() {
+    try { 
+       let url = "/api/reports";
+       if (reportsStartDate && reportsEndDate) {
+         url += `?from=${reportsStartDate}&to=${reportsEndDate}`;
+       }
+       const res = await fetch(url); 
+       const data = await res.json(); 
+       setReports(data); 
+    } catch {}
+  }
+
   function revalidateAll() {
     fetch("/api/cash").then((response) => response.json()).then((data) => setCash(data.caja ?? null)).catch(() => undefined);
     fetch("/api/inventory/alerts").then(res => res.json()).then(data => setInventoryAlerts(data.products || [])).catch(() => undefined);
     if (activeTab === "Resumen") fetch("/api/dashboard").then(res => res.json()).then(setDashboard).catch(() => undefined);
+    if (activeTab === "Reportes") fetchReportsData();
     if (activeTab === "Inventario") fetchProducts();
     if (activeTab === "Cuentas por cobrar") fetchReceivablesData();
     if (activeTab === "Cuentas por pagar") fetchPayablesData();
-    if (activeTab === "Historial / Caja") fetchHistoryData();
+    if (activeTab === "Historial / Caja" || activeTab === "Punto de venta") fetchHistoryData();
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
@@ -90,8 +122,11 @@ export default function Home() {
   useEffect(() => { if(activeTab === "Historial / Caja") fetchHistoryData(); }, [salesDate]);
 
   function showToast(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(""), 3500);
+    if (/error|insuficiente|no se pudo|debe/i.test(msg)) {
+      toast.error(msg);
+    } else {
+      toast.success(msg);
+    }
   }
 
   // --- POS Functions ---
@@ -105,6 +140,12 @@ export default function Home() {
   }, [code]);
 
   function addToCart(product: Product) {
+    const existing = cart.find((item) => item.id === product.id);
+    const nextQuantity = existing ? existing.cantidad + 1 : 1;
+    if (nextQuantity > product.stockActual) {
+      showToast("Stock insuficiente");
+      return;
+    }
     setCart((current) => { const existing = current.find((item) => item.id === product.id); return existing ? current.map((item) => item.id === product.id ? { ...item, cantidad: item.cantidad + 1 } : item) : [...current, { ...product, cantidad: 1 }]; });
     setCode(""); setSuggestions([]); setMessage("Producto agregado");
   }
@@ -115,7 +156,16 @@ export default function Home() {
   }
 
   function changeQuantity(id: number, amount: number) {
-    setCart((current) => current.flatMap((item) => item.id === id && item.cantidad + amount > 0 ? [{ ...item, cantidad: item.cantidad + amount }] : item.id === id ? [] : [item]));
+    setCart((current) => current.flatMap((item) => {
+      if (item.id === id) {
+        if (amount > 0 && item.cantidad + amount > item.stockActual) {
+          showToast("Stock insuficiente");
+          return [item];
+        }
+        return item.cantidad + amount > 0 ? [{ ...item, cantidad: item.cantidad + amount }] : [];
+      }
+      return [item];
+    }));
   }
 
   async function chargeSale() {
@@ -127,6 +177,7 @@ export default function Home() {
       const data = await response.json();
       if (!response.ok) { setMessage(data.error ?? "No se pudo registrar"); return; }
       setCart([]); setCreditCustomer(""); showToast("¡Cobrado con éxito!"); setMessage(`Venta #${data.id} registrada`);
+      await fetchHistoryData();
       revalidateAll();
     } finally { setIsSubmitting(false); }
   }
@@ -151,7 +202,7 @@ export default function Home() {
     e.preventDefault(); if (isSubmitting) return; setIsSubmitting(true);
     try {
       const form = new FormData(e.currentTarget);
-      const body = { nombre: form.get("nombre"), categoria: form.get("categoria"), sku: form.get("sku"), precioVenta: Number(form.get("precioVenta")), costo: Number(form.get("costo")), stockActual: Number(form.get("stockActual")), stockMinimo: Number(form.get("stockMinimo")) };
+      const body = { nombre: form.get("nombre"), sku: form.get("sku"), precioVenta: Number(form.get("precioVenta")), costo: Number(form.get("costo")), stockInicial: Number(form.get("stockActual")), stockActual: Number(form.get("stockActual")), stockMinimo: Number(form.get("stockMinimo")) };
       const url = productModal?.id ? `/api/products/${productModal.id}` : "/api/products";
       const method = productModal?.id ? "PUT" : "POST";
       const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -211,11 +262,31 @@ export default function Home() {
 
   // --- Computed Values ---
   const filteredInventory = useMemo(() => {
-    let list = inventoryResults;
+    let list = [...inventoryResults];
     if (invCategoryFilter !== "Todas") list = list.filter(p => p.categoria === invCategoryFilter);
     if (inventorySearch.trim()) { const q = inventorySearch.toLowerCase(); list = list.filter(p => p.nombre?.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)); }
+    
+    if (invSortConfig) {
+      list.sort((a, b) => {
+        let aVal: any = a[invSortConfig.key as keyof Product] ?? "";
+        let bVal: any = b[invSortConfig.key as keyof Product] ?? "";
+        
+        if (invSortConfig.key === 'margen') {
+          aVal = (a.precioVenta || 0) - (a.costo || 0);
+          bVal = (b.precioVenta || 0) - (b.costo || 0);
+        } else if (typeof aVal === 'string' && typeof bVal === 'string') {
+          aVal = aVal.toLowerCase();
+          bVal = bVal.toLowerCase();
+        }
+
+        if (aVal < bVal) return invSortConfig.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return invSortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    
     return list;
-  }, [inventoryResults, invCategoryFilter, inventorySearch]);
+  }, [inventoryResults, invCategoryFilter, inventorySearch, invSortConfig]);
 
   const uniqueCategories = useMemo(() => {
     return ["Todas", ...Array.from(new Set(inventoryResults.map(p => p.categoria).filter(Boolean)))];
@@ -254,13 +325,16 @@ export default function Home() {
   // Variables calculadas Caja Diaria
   const totalIngresos = salesData.ventas.filter(v => v.metodo_pago.toLowerCase() !== 'credito').reduce((sum, v) => sum + Number(v.total), 0) + 
                         salesData.movimientos.filter(m => m.tipo === 'ingreso').reduce((sum, m) => sum + Number(m.monto), 0);
+  const totalIngresosEfectivo = salesData.ventas.filter(v => v.metodo_pago.toLowerCase() === 'efectivo').reduce((sum, v) => sum + Number(v.total), 0) + 
+                                salesData.movimientos.filter(m => m.tipo === 'ingreso' && (!m.metodo_pago || m.metodo_pago.toLowerCase() === 'efectivo')).reduce((sum, m) => sum + Number(m.monto), 0);
+  const totalIngresosTransferencia = salesData.ventas.filter(v => v.metodo_pago.toLowerCase() === 'transferencia').reduce((sum, v) => sum + Number(v.total), 0) + 
+                                     salesData.movimientos.filter(m => m.tipo === 'ingreso' && m.metodo_pago?.toLowerCase() === 'transferencia').reduce((sum, m) => sum + Number(m.monto), 0);
   const totalEgresos = salesData.movimientos.filter(m => m.tipo === 'retiro').reduce((sum, m) => sum + Number(m.monto), 0);
   const desgloseVentasEfectivo = dashboard?.desgloseHoy?.find(d => d.metodo === 'efectivo')?.total || 0;
   const desgloseVentasTransf = dashboard?.desgloseHoy?.find(d => d.metodo === 'transferencia')?.total || 0;
   const desgloseVentasCredito = dashboard?.desgloseHoy?.find(d => d.metodo.toLowerCase() === 'credito')?.total || 0;
 
   return <main className="app-shell">
-    {toast && <div className="fixed top-5 right-5 z-50 bg-gray-900 text-white px-6 py-3 rounded shadow-xl transition-all font-semibold">{toast}</div>}
     
     <aside className="sidebar">
       <div className="brand"><Image src="/logo.png" alt="Punto de Venta" width={52} height={52} priority className="bg-transparent" /><div><strong>DPVG</strong><span>Punto de venta</span></div></div>
@@ -278,11 +352,16 @@ export default function Home() {
 
       {activeTab === "Resumen" && (
         <div className="flex flex-col gap-6">
-           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
              <div className="panel flex flex-col gap-2">
                <p className="eyebrow">Ventas del Mes</p>
                <h2 className="text-3xl font-bold">${dashboard?.ventasTotalesMes?.toFixed(2) || "0.00"}</h2>
                <p className="text-xs text-gray-500">Total acumulado 30 días</p>
+             </div>
+             <div className="panel flex flex-col gap-2">
+               <p className="eyebrow">Egresos</p>
+               <h2 className="text-3xl font-bold text-red-600">-${dashboard?.egresosHoy?.toFixed(2) || "0.00"}</h2>
+               <p className="text-xs text-gray-500">Mes: -${dashboard?.egresosTotalesMes?.toFixed(2) || "0.00"}</p>
              </div>
              <div className="panel flex flex-col gap-2">
                <p className="eyebrow">Desglose Día (Efectivo)</p>
@@ -290,8 +369,8 @@ export default function Home() {
                <p className="text-xs text-gray-500">Ventas en caja de hoy</p>
              </div>
              <div className="panel flex flex-col gap-2">
-               <p className="eyebrow">Transferencias / Créditos</p>
-               <h2 className="text-2xl font-bold text-blue-700 mt-1">${desgloseVentasTransf.toFixed(2)} / ${desgloseVentasCredito.toFixed(2)}</h2>
+               <p className="eyebrow">Transferencias</p>
+               <h2 className="text-2xl font-bold text-blue-700 mt-1">${desgloseVentasTransf.toFixed(2)}</h2>
                <p className="text-xs text-gray-500">Métodos alternativos hoy</p>
              </div>
              <div className="panel flex flex-col gap-2">
@@ -299,29 +378,216 @@ export default function Home() {
                <h2 className="text-3xl font-bold">${dashboard?.valorInventario?.toFixed(2) || "0.00"}</h2>
                <p className="text-xs text-gray-500">Capital valorizado al costo</p>
              </div>
+             <div className="panel flex flex-col gap-2">
+               <p className="eyebrow text-red-600">Cuentas por Pagar</p>
+               <h2 className="text-3xl font-bold">${dashboard?.cuentasPorPagar?.toFixed(2) || "0.00"}</h2>
+               <p className="text-xs text-gray-500">Deuda a proveedores</p>
+             </div>
            </div>
 
            <section className="panel">
-             <div className="section-heading"><div><p className="eyebrow">Desempeño</p><h2>Ranking Mejores Días</h2></div></div>
-             <div className="cart-table-wrap mt-4">
+              <div className="section-heading"><div><p className="eyebrow">Desempeño</p><h2>Historial de Ventas por Día</h2></div></div>
+              <div className="cart-table-wrap mt-4">
+                <table>
+                  <thead><tr><th>Fecha</th><th className="align-right">Cant. Operaciones</th><th className="align-right">Volumen de Ventas</th><th className="align-right">Egresos</th><th className="align-right">Total (Neto)</th><th className="align-right">Margen</th></tr></thead>
+                  <tbody>
+                    {!dashboard?.rankingMejoresDias?.length ? (
+                       <tr><td colSpan={6} className="empty-state">Sin historial de ventas.</td></tr>
+                    ) : dashboard.rankingMejoresDias.map((d, idx: number) => (
+                       <tr key={idx}>
+                         <td><strong>{new Date(d.fecha).toLocaleDateString('es-EC', {timeZone: 'UTC'})}</strong></td>
+                         <td className="align-right muted">{d.cantidad}</td>
+                         <td className="align-right price text-green-600">${d.total.toFixed(2)}</td>
+                         <td className="align-right price text-red-500">-${d.egresos.toFixed(2)}</td>
+                         <td className="align-right price font-bold">${d.neto.toFixed(2)}</td>
+                         <td className="align-right price font-bold text-green-700">${(d.margen || 0).toFixed(2)}</td>
+                       </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+        </div>
+      )}
+
+      {activeTab === "Reportes" && (
+        <div className="flex flex-col gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <section className="panel flex flex-col gap-4">
+              <div className="section-heading mb-0"><div><p className="eyebrow">Ingresos vs Egresos</p><h2>Últimos 6 Meses</h2></div></div>
+              <div className="h-64 w-full">
+                {reports?.graficas?.ingresosEgresos ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={reports.graficas.ingresosEgresos} margin={{top: 10, right: 10, left: -20, bottom: 0}}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e6e1" />
+                      <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#777b76'}} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#777b76'}} tickFormatter={(val) => `$${val}`} />
+                      <RechartsTooltip cursor={{fill: '#f5f6f2'}} contentStyle={{borderRadius: '8px', border: '1px solid #e4e6e1', fontSize: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)'}} />
+                      <Legend iconType="circle" wrapperStyle={{fontSize: '12px'}} />
+                      <Bar dataKey="ingresos" name="Ingresos" fill="#88c9dd" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                      <Bar dataKey="egresos" name="Egresos" fill="#e77c70" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">Cargando...</div>}
+              </div>
+            </section>
+
+            <section className="panel flex flex-col gap-4">
+              <div className="section-heading mb-0"><div><p className="eyebrow">Evolución</p><h2>Ventas Últimos 15 Días</h2></div></div>
+              <div className="h-64 w-full">
+                {reports?.graficas?.ventasPorDia ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={reports.graficas.ventasPorDia} margin={{top: 10, right: 10, left: -20, bottom: 0}}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e6e1" />
+                      <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#777b76'}} tickFormatter={(val) => val.substring(8, 10) + '/' + val.substring(5, 7)} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#777b76'}} tickFormatter={(val) => `$${val}`} />
+                      <RechartsTooltip cursor={{stroke: '#e4e6e1', strokeWidth: 1}} contentStyle={{borderRadius: '8px', border: '1px solid #e4e6e1', fontSize: '12px'}} />
+                      <Line type="monotone" dataKey="total" name="Total Ventas" stroke="#88c9dd" strokeWidth={3} dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">Cargando...</div>}
+              </div>
+            </section>
+
+            <section className="panel flex flex-col gap-4">
+              <div className="section-heading mb-0"><div><p className="eyebrow">Distribución</p><h2>Top 5 Productos Vendidos</h2></div></div>
+              <div className="h-64 w-full">
+                {reports?.graficas?.topProductos ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={reports.graficas.topProductos} dataKey="cantidad" nameKey="nombre" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5}>
+                        {reports.graficas.topProductos.map((entry: any, index: number) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip contentStyle={{borderRadius: '8px', border: '1px solid #e4e6e1', fontSize: '12px'}} />
+                      <Legend iconType="circle" wrapperStyle={{fontSize: '11px'}} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">Cargando...</div>}
+              </div>
+            </section>
+
+            <section className="panel flex flex-col gap-4">
+              <div className="section-heading mb-0"><div><p className="eyebrow">Flujo</p><h2>Flujo de Caja Neto (15 Días)</h2></div></div>
+              <div className="h-64 w-full">
+                {reports?.graficas?.flujoCaja ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={reports.graficas.flujoCaja} margin={{top: 10, right: 10, left: -20, bottom: 0}}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e6e1" />
+                      <XAxis dataKey="fecha" axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#777b76'}} tickFormatter={(val) => val.substring(8, 10) + '/' + val.substring(5, 7)} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#777b76'}} tickFormatter={(val) => `$${val}`} />
+                      <RechartsTooltip cursor={{stroke: '#e4e6e1', strokeWidth: 1}} contentStyle={{borderRadius: '8px', border: '1px solid #e4e6e1', fontSize: '12px'}} />
+                      <Area type="monotone" dataKey="neto" name="Neto" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.2} strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">Cargando...</div>}
+              </div>
+            </section>
+
+            <section className="panel flex flex-col gap-4">
+              <div className="section-heading mb-0"><div><p className="eyebrow">Transacciones</p><h2>Horas Pico de Ventas</h2></div></div>
+              <div className="h-64 w-full">
+                {reports?.graficas?.horasPico ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={reports.graficas.horasPico} margin={{top: 10, right: 10, left: -20, bottom: 0}}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e6e1" />
+                      <XAxis dataKey="hora" axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#777b76'}} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#777b76'}} />
+                      <RechartsTooltip cursor={{fill: '#f5f6f2'}} contentStyle={{borderRadius: '8px', border: '1px solid #e4e6e1', fontSize: '12px'}} />
+                      <Bar dataKey="tickets" name="Tickets" fill="#f3b45c" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">Cargando...</div>}
+              </div>
+            </section>
+
+            <section className="panel flex flex-col gap-4">
+              <div className="section-heading mb-0"><div><p className="eyebrow">Tendencia</p><h2>Métodos de Pago</h2></div></div>
+              <div className="h-64 w-full">
+                {reports?.graficas?.metodosPago ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={reports.graficas.metodosPago} dataKey="cantidad" nameKey="nombre" cx="50%" cy="50%" outerRadius={80}>
+                        {reports.graficas.metodosPago.map((entry: any, index: number) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip contentStyle={{borderRadius: '8px', border: '1px solid #e4e6e1', fontSize: '12px'}} />
+                      <Legend iconType="circle" wrapperStyle={{fontSize: '11px'}} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">Cargando...</div>}
+              </div>
+            </section>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <section className="panel">
+               <div className="section-heading mb-4"><div><p className="eyebrow">Rentabilidad</p><h2>Top 5 Margen</h2></div></div>
+               <div className="cart-table-wrap !min-h-0">
+                 <table>
+                   <thead><tr><th>Producto</th><th className="align-right">Margen</th></tr></thead>
+                   <tbody>
+                     {!reports?.listas?.topMargen?.length ? <tr><td colSpan={2} className="empty-state !py-6">Sin datos</td></tr> : reports.listas.topMargen.map((p: any, i: number) => (
+                       <tr key={i}><td><strong>{p.nombre}</strong></td><td className="align-right price text-green-600">${Number(p.margen).toFixed(2)}</td></tr>
+                     ))}
+                   </tbody>
+                 </table>
+               </div>
+            </section>
+
+            <section className="panel">
+               <div className="section-heading mb-4"><div><p className="eyebrow">Rendimiento</p><h2>Margen por Día</h2></div></div>
+               <div className="cart-table-wrap !min-h-0">
+                 <table>
+                   <thead><tr><th>Fecha</th><th className="align-right">Ingresos</th><th className="align-right">Margen</th></tr></thead>
+                   <tbody>
+                     {!reports?.listas?.margenPorDia?.length ? <tr><td colSpan={3} className="empty-state !py-6">Sin datos</td></tr> : reports.listas.margenPorDia.map((m: any, i: number) => (
+                       <tr key={i}><td><strong>{new Date(m.fecha).toLocaleDateString()}</strong></td><td className="align-right price text-gray-700">${Number(m.ingresos).toFixed(2)}</td><td className="align-right price font-bold text-green-600">${Number(m.margen).toFixed(2)}</td></tr>
+                     ))}
+                   </tbody>
+                 </table>
+               </div>
+            </section>
+
+            <section className="panel">
+               <div className="section-heading mb-4"><div><p className="eyebrow">Riesgo</p><h2>Mayor Deuda Prov.</h2></div></div>
+               <div className="cart-table-wrap !min-h-0">
+                 <table>
+                   <thead><tr><th>Proveedor</th><th className="align-right">Deuda</th></tr></thead>
+                   <tbody>
+                     {!reports?.listas?.proveedoresDeuda?.length ? <tr><td colSpan={2} className="empty-state !py-6">Sin datos</td></tr> : reports.listas.proveedoresDeuda.map((p: any, i: number) => (
+                       <tr key={i}><td><strong>{p.nombre}</strong></td><td className="align-right price text-red-600">${Number(p.total_deuda).toFixed(2)}</td></tr>
+                     ))}
+                   </tbody>
+                 </table>
+               </div>
+            </section>
+          </div>
+
+          <section className="panel mt-6">
+             <div className="section-heading mb-4">
+                <div><p className="eyebrow">Desglose</p><h2>Historial de Ventas (con Margen)</h2></div>
+             </div>
+             <div className="cart-table-wrap">
                <table>
-                 <thead><tr><th>Fecha</th><th className="align-right">Cant. Operaciones</th><th className="align-right">Volumen de Ventas</th><th className="align-right">Egresos</th><th className="align-right">Total (Neto)</th></tr></thead>
+                 <thead><tr><th>Ticket ID</th><th>Fecha</th><th>Método</th><th className="align-right">Total</th><th className="align-right">Costo</th><th className="align-right">Margen Ganancia</th></tr></thead>
                  <tbody>
-                   {!dashboard?.rankingMejoresDias?.length ? (
-                      <tr><td colSpan={5} className="empty-state">Sin historial de ventas.</td></tr>
-                   ) : dashboard.rankingMejoresDias.map((d, idx: number) => (
-                      <tr key={idx}>
-                        <td><strong>{new Date(d.fecha).toLocaleDateString('es-EC', {timeZone: 'UTC'})}</strong></td>
-                        <td className="align-right muted">{d.cantidad}</td>
-                        <td className="align-right price text-green-600">${d.total.toFixed(2)}</td>
-                        <td className="align-right price text-red-500">-${d.egresos.toFixed(2)}</td>
-                        <td className="align-right price font-bold">${d.neto.toFixed(2)}</td>
-                      </tr>
+                   {!reports?.listas?.historialVentas?.length ? <tr><td colSpan={6} className="empty-state py-6">Sin datos para el período seleccionado.</td></tr> : reports.listas.historialVentas.map((v: any) => (
+                     <tr key={v.ticket}>
+                       <td><strong>#{v.ticket}</strong></td>
+                       <td>{new Date(v.created_at).toLocaleString('es-EC', {timeZone: 'America/Guayaquil'})}</td>
+                       <td className="capitalize">{v.metodo_pago}</td>
+                       <td className="align-right price text-blue-700 font-semibold">${Number(v.total).toFixed(2)}</td>
+                       <td className="align-right price text-gray-500">${Number(v.costo_total).toFixed(2)}</td>
+                       <td className="align-right price text-green-700 font-bold">${Number(v.margen).toFixed(2)}</td>
+                     </tr>
                    ))}
                  </tbody>
                </table>
              </div>
-           </section>
+          </section>
         </div>
       )}
 
@@ -360,7 +626,7 @@ export default function Home() {
           
           <aside className="w-full lg:w-80 flex flex-col gap-6">
             <section className="metric-row">
-              <div className="metric-card"><span>Ventas del día</span><strong>${desgloseVentasEfectivo + desgloseVentasTransf + desgloseVentasCredito}</strong><small>Acumulado hoy</small></div>
+              <div className="metric-card"><span>Ventas del día</span><strong>${(totalIngresosEfectivo + totalIngresosTransferencia - totalEgresos).toFixed(2)}</strong><small>Acumulado hoy</small></div>
               <div className="metric-card accent"><span>Artículos</span><strong>{cart.reduce((s, i) => s + i.cantidad, 0)}</strong><small>En el carrito</small></div>
             </section>
             
@@ -436,6 +702,14 @@ export default function Home() {
             <aside className="w-full md:w-80 flex flex-col gap-6">
               <section className="panel">
                 <div className="section-heading"><div><p className="eyebrow">Cálculo Automático</p><h2>Resumen del Día</h2></div></div>
+                <div className="flex justify-between items-center py-2">
+                  <span className="text-sm text-gray-500">Ingresos Efectivo</span>
+                  <strong className="text-gray-700">${totalIngresosEfectivo.toFixed(2)}</strong>
+                </div>
+                <div className="flex justify-between items-center py-2">
+                  <span className="text-sm text-gray-500">Ingresos Transferencia</span>
+                  <strong className="text-gray-700">${totalIngresosTransferencia.toFixed(2)}</strong>
+                </div>
                 <div className="flex justify-between items-center py-3 border-b border-gray-100">
                   <span className="text-sm text-gray-500">Ingresos Totales</span>
                   <strong className="text-green-600 font-bold">${totalIngresos.toFixed(2)}</strong>
@@ -466,7 +740,7 @@ export default function Home() {
         <div className="flex flex-col gap-6">
           <section className="panel">
             <div className="section-heading">
-               <div><p className="eyebrow">Catálogo Completo</p><h2>Inventario Avanzado</h2></div>
+               <div><p className="eyebrow">Catálogo Completo</p><h2>Inventario</h2></div>
                <button className="primary-action text-sm !py-2 !px-4" onClick={() => setProductModal({})}>+ Agregar Producto</button>
             </div>
             <div className="flex gap-4 mb-6 flex-wrap">
@@ -482,16 +756,29 @@ export default function Home() {
             
             <div className="cart-table-wrap">
               <table>
-                <thead><tr><th>Producto</th><th>Categoría</th><th>SKU</th><th>Stock Actual</th><th className="align-right">Costo</th><th className="align-right">Precio Venta</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th onClick={() => requestInvSort('nombre')} className="cursor-pointer select-none hover:bg-gray-100">Producto {invSortConfig?.key === 'nombre' ? (invSortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                    <th onClick={() => requestInvSort('categoria')} className="cursor-pointer select-none hover:bg-gray-100">Categoría {invSortConfig?.key === 'categoria' ? (invSortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                    <th onClick={() => requestInvSort('sku')} className="cursor-pointer select-none hover:bg-gray-100">SKU {invSortConfig?.key === 'sku' ? (invSortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                    <th onClick={() => requestInvSort('stockActual')} className="cursor-pointer select-none hover:bg-gray-100">Stock Actual {invSortConfig?.key === 'stockActual' ? (invSortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                    <th onClick={() => requestInvSort('stockMinimo')} className="cursor-pointer select-none hover:bg-gray-100">Stock Mín. {invSortConfig?.key === 'stockMinimo' ? (invSortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                    <th onClick={() => requestInvSort('costo')} className="align-right cursor-pointer select-none hover:bg-gray-100">Costo {invSortConfig?.key === 'costo' ? (invSortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                    <th onClick={() => requestInvSort('precioVenta')} className="align-right cursor-pointer select-none hover:bg-gray-100">Precio Venta {invSortConfig?.key === 'precioVenta' ? (invSortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                    <th onClick={() => requestInvSort('margen')} className="align-right cursor-pointer select-none hover:bg-gray-100">Margen {invSortConfig?.key === 'margen' ? (invSortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {filteredInventory.length === 0 ? <tr><td colSpan={6} className="empty-state">No se encontraron productos.</td></tr> : filteredInventory.map(p => (
+                  {filteredInventory.length === 0 ? <tr><td colSpan={8} className="empty-state">No se encontraron productos.</td></tr> : filteredInventory.map(p => (
                     <tr key={p.id} onDoubleClick={() => setProductModal(p)} className="cursor-pointer hover:bg-gray-50 transition-colors" title="Doble clic para editar">
                       <td><strong>{p.nombre || "Producto"}</strong></td>
                       <td className="text-xs text-gray-500 uppercase tracking-wider">{p.categoria}</td>
                       <td className="muted">{p.sku}</td>
                       <td><span className={p.stockActual <= p.stockMinimo ? "text-red-600 font-bold" : "font-medium"}>{p.stockActual}</span></td>
+                      <td><span className="muted">{p.stockMinimo}</span></td>
                       <td className="align-right price muted">${p.costo.toFixed(2)}</td>
                       <td className="align-right price font-bold text-gray-900">${p.precioVenta.toFixed(2)}</td>
+                      <td className="align-right price text-green-700 font-bold">${(p.precioVenta - p.costo).toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -610,7 +897,7 @@ export default function Home() {
           <form onSubmit={submitCash}>
             {modal === "movement" && (
               <>
-                <label>Tipo<select name="tipo" defaultValue="ingreso"><option value="ingreso">Ingreso</option><option value="retiro">Retiro</option></select></label>
+                <label>Tipo<select name="tipo" defaultValue="ingreso"><option value="ingreso">Ingreso</option><option value="retiro">Egreso</option></select></label>
                 <label>Concepto<input name="concepto" required placeholder="Ej. pago de servicio" /></label>
               </>
             )}
@@ -696,13 +983,26 @@ export default function Home() {
           <h2 id="modal-title">{productModal.id ? "Editar Producto" : "Nuevo Producto"}</h2>
           <form onSubmit={submitProduct} className="grid grid-cols-2 gap-4 mt-4">
              <label className="col-span-2">Nombre del producto<input name="nombre" defaultValue={productModal.nombre || ""} required autoFocus /></label>
-             <label>SKU / Código<input name="sku" defaultValue={productModal.sku || ""} required /></label>
-             <label>Categoría<input name="categoria" defaultValue={productModal.categoria || "General"} required /></label>
+             <label className="col-span-2">SKU / Código<input name="sku" defaultValue={productModal.sku || ""} /></label>
              <label>Costo ($)<input name="costo" type="number" step="0.01" min="0" defaultValue={productModal.costo || 0} required /></label>
              <label>PVP (Precio de Venta)<input name="precioVenta" type="number" step="0.01" min="0" defaultValue={productModal.precioVenta || 0} required /></label>
              <label>Stock Actual<input name="stockActual" type="number" step="0.001" min="0" defaultValue={productModal.stockActual || 0} required /></label>
              <label>Stock Mínimo (Alerta)<input name="stockMinimo" type="number" step="0.001" min="0" defaultValue={productModal.stockMinimo || 0} required /></label>
-             <button className={"primary-action modal-submit col-span-2 mt-2 " + (isSubmitting ? "opacity-50" : "")} disabled={isSubmitting} type="submit">{productModal.id ? "Actualizar Cambios" : "Guardar Producto"}</button>
+             <div className="col-span-2 mt-4 flex gap-4">
+               <button className={"primary-action modal-submit flex-1 " + (isSubmitting ? "opacity-50" : "")} disabled={isSubmitting} type="submit">{productModal.id ? "Actualizar Cambios" : "Guardar Producto"}</button>
+               {productModal.id && (
+                 <button type="button" className={"primary-action modal-submit bg-red-600 hover:bg-red-700 " + (isSubmitting ? "opacity-50" : "")} disabled={isSubmitting} onClick={async () => {
+                   if(confirm("¿Seguro que deseas eliminar este producto? Se ocultará del inventario pero se mantendrá en historiales.")){
+                     setIsSubmitting(true);
+                     try {
+                       const res = await fetch(`/api/products/${productModal.id}`, { method: 'DELETE' });
+                       if(res.ok) { setProductModal(null); showToast("Producto eliminado"); revalidateAll(); }
+                       else showToast("Error al eliminar");
+                     } finally { setIsSubmitting(false); }
+                   }
+                 }}>Eliminar Producto</button>
+               )}
+             </div>
           </form>
         </section>
       </div>

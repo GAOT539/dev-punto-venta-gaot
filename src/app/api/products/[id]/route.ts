@@ -11,7 +11,7 @@ const updateSchema = z.object({
   costo: z.number().nonnegative(),
   stockActual: z.number().nonnegative(),
   stockMinimo: z.number().nonnegative(),
-  sku: z.string().trim().min(1)
+  sku: z.string().trim().optional().or(z.literal(''))
 });
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -38,10 +38,15 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         [input.nombre, input.categoria || 'General', input.proveedorId || null, productoId]
       );
 
+      let finalSku = input.sku;
+      if (!finalSku) {
+        finalSku = `SKU-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2,5).toUpperCase()}`;
+      }
+
       // Actualizar variante
       await connection.execute(
         "UPDATE variantes_producto SET sku = ?, precio_venta = ?, costo = ?, stock_actual = ?, stock_minimo = ? WHERE id = ?",
-        [input.sku, input.precioVenta, input.costo, input.stockActual, input.stockMinimo, id]
+        [finalSku, input.precioVenta, input.costo, input.stockActual, input.stockMinimo, id]
       );
 
       await connection.commit();
@@ -52,6 +57,21 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     } finally {
       connection.release();
     }
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const params = await context.params;
+    const id = Number(params.id);
+    if (!id || id <= 0) return Response.json({ error: "ID de variante inválido" }, { status: 400 });
+
+    const pool = getMysqlPool();
+    await pool.execute("UPDATE variantes_producto SET activo = FALSE WHERE id = ?", [id]);
+    
+    return Response.json({ success: true, id });
   } catch (error) {
     return errorResponse(error);
   }

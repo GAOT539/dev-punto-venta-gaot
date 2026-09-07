@@ -13,7 +13,7 @@
 
 - 🎯 **Punto de Venta (POS):** Optimizado para uso intensivo. Integra búsqueda inteligente, lectura por escáner de códigos de barras/SKU, y calculadora integrada de vueltos/cobros.
 - 🗄️ **Caja Registradora:** Control estricto con apertura/cierre de turnos (arqueos ciegos o declarados), e ingresos/retiros manuales blindados.
-- 📦 **Inventario Avanzado:** Seguimiento de stock en tiempo real, alertas automáticas de *stock mínimo*, y control de Costo vs. Precio de Venta Público (PVP).
+- 📦 **Inventario:** Seguimiento de stock en tiempo real, alertas automáticas de *stock mínimo*, y control de Costo vs. Precio de Venta Público (PVP).
 - 🧾 **Cuentas por Pagar:** Gestión integral de Proveedores y facturas de mercadería, incluyendo el registro de abonos y saldos pendientes.
 - 💳 **Cuentas por Cobrar (Créditos):** *(Nota: Módulo de CRM y créditos a clientes temporalmente desactivado por reglas de negocio).*
 
